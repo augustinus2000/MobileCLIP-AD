@@ -1,0 +1,36 @@
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Backup and temporary files
+*.bak
+*.bak_*
+*.backup
+*.old
+*.tmp
+*~
+*.swp
+
+# LaTeX temporary files
+paper/*.aux
+paper/*.log
+paper/*.out
+paper/*.fls
+paper/*.fdb_latexmk
+paper/*.synctex.gz
+
+# Runtime outputs
+outputs/
+paper_results/
+deprecated/
+logs/
+trash_*/
+trash_after_final_archive_*/
+trash_scripts_after_final_*/
+
+# Large final archives kept on server only
+final_archive/*.tar.gz
+
+# OS files
+.DS_Store

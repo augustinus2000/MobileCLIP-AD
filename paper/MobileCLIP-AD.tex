@@ -1,0 +1,736 @@
+\documentclass[10pt]{article}
+
+\usepackage[margin=0.85in]{geometry}
+\usepackage{times}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{caption}
+\usepackage{titlesec}
+
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.5em}{}
+
+\renewenvironment{abstract}
+{
+\par
+\vspace{0.3em}
+\centerline{\large\bfseries Abstract}
+\vspace{0.8em}
+\itshape
+\noindent
+}
+{
+\par
+\normalfont
+\vspace{0.8em}
+}
+
+\begin{document}
+
+\begin{center}
+\vspace*{0.25cm}
+{\fontsize{14.5}{18}\selectfont\bfseries
+\begin{tabular}{c}
+Exploring Lightweight Dense Adaptation of MobileCLIP\\
+for Cross-Dataset Industrial Anomaly Segmentation
+\end{tabular}\par}
+\vspace{0.75cm}
+{\large Junhyeok Im\par}
+\vspace{0.18cm}
+{\normalsize
+School of Electronics and Electrical Engineering\\
+Kyungpook National University, Daegu, Republic of Korea\par}
+\vspace{0.15cm}
+{\small \texttt{jhim@knu.ac.kr}\par}
+\vspace{0.65cm}
+\end{center}
+
+\begin{abstract}
+Vision-language models have shown promising potential for industrial anomaly segmentation by comparing visual features with textual descriptions of normal and abnormal states. However, CLIP-style contrastive pretraining primarily aligns global image and text representations, and dense anomaly localization requires additional mechanisms to obtain reliable pixel-level responses. Existing CLIP-based anomaly segmentation methods typically introduce additional localization mechanisms, such as window-level embedding, prompt adaptation, or feature refinement, but they usually rely on large ViT-based CLIP backbones. In contrast, mobile-oriented vision-language models remain underexplored for dense industrial anomaly localization.
+
+We propose MobileCLIP-AD, a source-supervised cross-dataset anomaly segmentation framework based on frozen MobileCLIP2. MobileCLIP2 provides hierarchical visual features from an efficient image encoder, offering a promising backbone for resource-efficient industrial anomaly segmentation. We introduce a Lightweight Dense Adaptation (LDA) module that projects hierarchical stage features into the text embedding dimension and refines them with lightweight local spatial adaptation. To reduce dependence on object category names, we further introduce an object-agnostic prompt formulation with generic normal-object and defective-object prototypes, together with object-agnostic prototype anchoring.
+
+Experiments on multiple cross-dataset industrial anomaly segmentation benchmarks demonstrate that MobileCLIP-AD achieves competitive localization performance under a frozen MobileCLIP2 backbone with substantially lower image-encoder FLOPs than ViT-L/14-based CLIP references. These results show that hierarchical MobileCLIP2 features can be effectively adapted for dense industrial anomaly segmentation through lightweight dense adaptation and object-agnostic text-side adaptation.
+\end{abstract}
+
+\section{Introduction}
+
+Image anomaly segmentation is a fundamental task for visual inspection systems, where the goal is not only to determine whether an image contains defects but also to identify the defective regions at the pixel level. This task is particularly important in manufacturing environments, where defects may be rare, diverse, and costly to annotate. Although fully supervised segmentation methods can achieve strong performance when sufficient pixel-level labels are available, collecting dense annotations for every possible defect type is often impractical. As a result, zero-shot, weakly supervised, and cross-dataset anomaly segmentation have received increasing attention for building more flexible inspection systems.
+
+Recent vision-language models, especially CLIP, have shown promising potential for anomaly detection by comparing visual representations with textual descriptions of normal and abnormal states. However, CLIP is originally trained with an image-level contrastive objective, which aligns global image embeddings with text embeddings rather than explicitly aligning every local visual feature with language. Therefore, dense anomaly localization is not a direct consequence of CLIP pretraining. Existing CLIP-based anomaly segmentation methods typically introduce additional localization mechanisms such as window-level embedding extraction, prompt learning, feature adaptation, or adapter modules to extract localization cues from image-level vision-language models.
+
+Despite this progress, most existing CLIP-based anomaly segmentation methods rely on relatively large visual encoders, such as ViT-based CLIP models. This can limit their practicality in resource-constrained image scenarios, including edge devices, embedded inspection modules, and real-time monitoring systems. Mobile vision-language models such as MobileCLIP2 provide a promising alternative because they are designed for efficient vision-language representation learning. However, directly applying MobileCLIP2 to dense anomaly segmentation is particularly challenging.
+
+Unlike ViT-based CLIP models, MobileCLIP2 adopts a mobile-friendly hierarchical image encoder that produces multi-stage feature maps before global average pooling. Although these intermediate representations provide rich spatial information, MobileCLIP2 does not expose a pretrained dense or window-level image embedding interface that can be directly compared with text embeddings. Consequently, existing CLIP-based localization mechanisms are not directly aligned with the architectural interface of MobileCLIP2 and may require inefficient repeated encoding or additional adaptation. This motivates a lightweight dense adaptation module that transforms hierarchical stage features into dense text-comparable representations.
+
+In this paper, we propose MobileCLIP-AD, a mobile-oriented vision-language framework for cross-dataset industrial anomaly segmentation. MobileCLIP-AD keeps the MobileCLIP2 backbone frozen and introduces a Lightweight Dense Adaptation (LDA) module that projects hierarchical stage features into the text embedding space. The projected dense features are compared with normal and abnormal text prototypes to generate anomaly segmentation maps. This design allows MobileCLIP2 to be used for dense anomaly segmentation while preserving the frozen mobile vision-language backbone.
+
+In addition, we introduce an object-agnostic prompt formulation for text-side anomaly adaptation. Instead of constructing prompts with object category names, MobileCLIP-AD uses generic ``normal object'' and ``defective object'' prototypes. This design removes the dependence on object category names during prompt construction and focuses the adaptation on normal-abnormal semantics. To stabilize prompt learning, we further introduce object-agnostic prototype anchoring, which constrains learned prototypes to remain close to fixed ``normal object'' and ``defective object'' anchors encoded by the frozen text encoder.
+
+The proposed framework is evaluated under cross-dataset image anomaly segmentation settings. Experimental results show that MobileCLIP2 can be effectively adapted for pixel-level anomaly segmentation using LDA. Object-agnostic prompt adaptation further enhances dense localization, and object-agnostic prototype anchoring mitigates image-level degradation caused by unconstrained prompt adaptation. These results demonstrate that MobileCLIP2 can be effectively adapted for industrial anomaly segmentation through lightweight dense adaptation and object-agnostic text-side adaptation.
+
+The main contributions of this work are summarized as follows:
+\begin{itemize}
+    \item We investigate MobileCLIP2 as an efficient mobile vision-language backbone for source-supervised cross-dataset industrial anomaly segmentation.
+    \item We propose MobileCLIP-AD, which adapts frozen MobileCLIP2 hierarchical features for dense anomaly segmentation using a Lightweight Dense Adaptation (LDA) module.
+    \item We introduce an object-agnostic prompt formulation that uses generic ``normal object'' and ``defective object'' prototypes, avoiding the need for object category names in prompt construction.
+    \item We propose object-agnostic prototype anchoring to stabilize prompt adaptation while preserving the original MobileCLIP2 text-semantic space.
+    \item We provide ablation studies on dense adaptation, object-agnostic prompting, prototype anchoring, MobileCLIP2 backbone variants, and computational efficiency.
+\end{itemize}
+
+\section{Related Work}
+
+\subsection{Image Anomaly Detection and Localization}
+Image anomaly detection aims to identify abnormal samples or regions that deviate from normal patterns. Traditional approaches often rely on reconstruction, feature distribution modeling, or memory-bank based nearest-neighbor matching. Recent image anomaly segmentation methods further focus on generating pixel-level anomaly maps. However, many methods require normal training samples from the target domain or dense pixel-level annotations, which limits their flexibility under domain shifts. In this work, we focus on cross-dataset anomaly segmentation, where the model is trained on one industrial anomaly dataset and evaluated on another.
+
+\subsection{Vision-Language Models for Anomaly Detection}
+Vision-language models such as CLIP provide a shared embedding space for images and text. This enables anomaly detection by comparing visual features with text prompts describing normal and abnormal states. Recent CLIP-based anomaly segmentation methods introduce additional localization mechanisms, including window-level embedding extraction, prompt learning, and feature adaptation, to bridge the gap between image-level CLIP pretraining and dense anomaly localization. Nevertheless, most of these approaches are based on relatively large CLIP backbones, which can be inefficient for edge-oriented industrial scenarios.
+
+\subsection{Mobile Vision-Language Models}
+MobileCLIP and its variants provide efficient vision-language representations with mobile-friendly visual encoders. These models are attractive for deployment in resource-constrained environments. However, their hierarchical visual features are not directly designed for dense text-feature similarity. This creates a structural mismatch when applying MobileCLIP2 to pixel-level anomaly segmentation. MobileCLIP-AD addresses this issue through lightweight dense adaptation and controlled prompt adaptation.
+
+\subsection{Prompt Learning}
+Prompt learning adapts the text side of a vision-language model by optimizing learnable context tokens while keeping the pretrained encoders frozen. It has been widely used to improve downstream adaptation in vision-language models. In anomaly segmentation, prompt learning can make normal and abnormal prototypes more discriminative. However, prompts that rely on object category names may be less suitable when category names are unavailable or unreliable in open industrial environments. Moreover, unconstrained prompt tuning may move prototypes away from the original semantic space and harm image-level transfer. In this work, we adopt an object-agnostic prompt formulation using generic normal-object and defective-object prompts, and regularize the learned prototypes with object-agnostic prototype anchors.
+
+\section{Methodology}
+
+\subsection{Motivation: Why MobileCLIP2 Requires Dense Feature Adaptation}
+
+Although recent CLIP-based anomaly segmentation methods have demonstrated strong zero-shot localization capability, dense anomaly localization is not a direct consequence of CLIP pretraining itself. CLIP is trained with an image-level contrastive objective that aligns global image and text embeddings, rather than explicitly supervising dense pixel-level image--text correspondence. As noted by WinCLIP~\cite{winclip}, extracting language-aligned dense visual representations for anomaly localization is therefore non-trivial.
+
+To overcome this limitation, existing CLIP-based methods introduce additional localization mechanisms. For example, WinCLIP repeatedly encodes local image windows with the pretrained CLIP image encoder to construct window-level image embeddings that can be directly compared with text embeddings, while other approaches employ prompt learning, feature adapters, or dense feature refinement to bridge the gap between image-level pretraining and dense anomaly localization.
+
+Applying the same strategy to MobileCLIP2 is considerably more challenging. Unlike CLIP ViTs, MobileCLIP2 adopts a mobile-oriented hierarchical MCi image encoder that produces multi-stage feature maps before global average pooling. These intermediate stage representations are designed for efficient hierarchical visual encoding rather than language-aligned local representations. Furthermore, the final vision-language projection is applied only after global pooling, meaning that MobileCLIP2 does not expose a pretrained dense or window-level image embedding interface that can be directly compared with text embeddings.
+
+Consequently, existing CLIP-based localization mechanisms are not directly aligned with the architectural interface of MobileCLIP2. Applying window-level embedding extraction would require repeated local image encoding or additional architectural adaptation, which weakens the efficiency motivation of using a mobile-oriented backbone. Rather than relying on CLIP-style window embedding extraction, we introduce a lightweight dense adaptation module that transforms hierarchical MobileCLIP2 stage features into dense representations suitable for text-guided anomaly localization. This design is naturally compatible with the hierarchical MobileCLIP2 architecture and does not require an explicit window-level localization interface.
+
+\subsection{Overview}
+
+We propose MobileCLIP-AD, a lightweight vision-language framework for cross-dataset industrial anomaly segmentation. The overall objective is to adapt a frozen MobileCLIP2 backbone for dense anomaly segmentation without modifying the backbone parameters. Given an input image, MobileCLIP-AD extracts hierarchical visual features from intermediate stages of the MobileCLIP2 image encoder. Since these stage features are not directly aligned with the text embedding space, we introduce a Lightweight Dense Adaptation (LDA) module consisting of a dense projection head and a lightweight local refinement module. The dense projection head maps hierarchical stage features into the same embedding space as text prototypes, while local refinement improves spatial coherence. Dense anomaly maps are then computed by comparing the adapted visual features with normal and abnormal text prototypes.
+
+In addition to lightweight dense adaptation, MobileCLIP-AD incorporates object-agnostic prompt adaptation to improve the discriminative power of normal and abnormal text prototypes. However, unconstrained prompt tuning can shift the learned prototypes away from the original MobileCLIP2 semantic space and degrade image-level transfer. To address this issue, we introduce object-agnostic prototype anchoring that constrains learned prompt prototypes to remain close to fixed ``normal object'' and ``defective object'' anchors.
+
+The proposed framework consists of three main components: frozen MobileCLIP2 feature extraction, lightweight dense adaptation, and object-agnostic anchored prompt adaptation.
+
+\subsection{Frozen MobileCLIP2 Feature Extraction}
+
+Let $I$ denote an input image. We use a pretrained MobileCLIP2 image encoder $E_v$ as a frozen visual backbone. Unlike standard CLIP vision transformers, MobileCLIP2 adopts a mobile-friendly hierarchical image encoder, which produces multi-stage feature maps with different spatial resolutions and semantic levels. We denote the feature map extracted from stage $s$ as
+\begin{equation}
+F_s = E_v^s(I) \in \mathbb{R}^{C_s \times H_s \times W_s},
+\label{eq:stage_feature}
+\end{equation}
+where $C_s$, $H_s$, and $W_s$ indicate the channel dimension, height, and width of the stage feature map, respectively. In our main setting, we use stage-2 and stage-3 features, which provide a balance between spatial resolution and semantic abstraction.
+
+Unlike CLIP-based localization methods that explicitly construct text-aligned local embeddings, MobileCLIP2 exposes only hierarchical stage representations before global average pooling. Consequently, these features are not directly suitable for dense text similarity. This motivates introducing a lightweight adaptation module that transforms hierarchical stage features into dense representations that can be effectively compared with text prototypes.
+
+\subsection{Lightweight Dense Adaptation}
+
+To adapt MobileCLIP2 stage features to the text embedding space, we introduce the Lightweight Dense Adaptation (LDA) module. LDA maps hierarchical MobileCLIP2 stage features to the text embedding space and further refines them using lightweight local spatial refinement. This design allows dense visual features to be compared with normal and abnormal text prototypes for pixel-level anomaly mapping.
+
+For each selected stage $s$, the corresponding feature map $F_s$ is first transformed by a learnable dense projection head into the text embedding dimension $D$:
+\begin{equation}
+Z_s = P_s(F_s) \in \mathbb{R}^{D \times H_s \times W_s},
+\label{eq:projection}
+\end{equation}
+where $P_s$ denotes a stage-specific dense projection head implemented as a lightweight learnable network. We then apply a lightweight local refinement block $\Phi_s(\cdot)$ to enhance spatially coherent dense responses:
+\begin{equation}
+\bar{Z}_s = Z_s + \Phi_s(Z_s).
+\label{eq:local_refinement}
+\end{equation}
+This refinement is implemented with a depthwise local operation followed by a point-wise projection, which adds only a small computational overhead.
+
+The locally refined feature $\bar{Z}_s$ is L2-normalized along the channel dimension before text similarity computation:
+\begin{equation}
+\hat{Z}_s = \mathrm{Normalize}(\bar{Z}_s).
+\label{eq:normalize}
+\end{equation}
+
+Let $t_n$ and $t_a$ denote the L2-normalized normal and abnormal text prototypes, respectively. Rather than directly treating the abnormal similarity alone as anomaly evidence, we define anomaly evidence as the relative preference for the abnormal prototype over the normal prototype. This formulation suppresses regions that are similarly compatible with both prototypes and provides a more discriminative dense anomaly representation. For each stage $s$ and spatial location $(i,j)$, we compute the dense anomaly logit as:
+\begin{equation}
+A_s(i,j) =
+\tau \left(
+\cos(\hat{z}_{s,ij}, t_a) -
+\cos(\hat{z}_{s,ij}, t_n)
+\right) + b,
+\label{eq:stage_anom_logit}
+\end{equation}
+where $\tau$ is a learnable logit scale and $b$ is a learnable global bias. Each stage-level anomaly logit map is then upsampled to the target resolution:
+\begin{equation}
+\tilde{A}_s = \mathrm{Upsample}(A_s) \in \mathbb{R}^{1 \times H \times W}.
+\label{eq:upsample}
+\end{equation}
+
+When multiple stages are used, the final anomaly logit map is obtained by a learnable weighted fusion of stage-level anomaly logits:
+\begin{equation}
+M = \sum_{s \in \mathcal{S}} \alpha_s \tilde{A}_s,
+\label{eq:fusion}
+\end{equation}
+where $\mathcal{S}$ denotes the set of selected stages and $\alpha_s$ is a learnable stage weight obtained with a softmax over stage parameters. The resulting map $M$ is used as the pixel-level anomaly score.
+
+\subsection{Object-Agnostic Text Prototypes}
+
+MobileCLIP-AD represents normal and abnormal states using object-agnostic textual prototypes. Instead of constructing category-specific prompts with object names, we use generic prompts that describe the anomaly state of an arbitrary object:
+\begin{align}
+p_n^{o} &= \text{``normal object''}, \\
+p_a^{o} &= \text{``defective object''}.
+\label{eq:object_prompts}
+\end{align}
+The frozen MobileCLIP2 text encoder $E_t$ encodes these prompts into the shared vision-language embedding space:
+\begin{align}
+t_n^{o} &= E_t(p_n^{o}), \\
+t_a^{o} &= E_t(p_a^{o}).
+\label{eq:object_text_proto}
+\end{align}
+The resulting prototypes are L2-normalized before being used for dense similarity computation. This object-agnostic formulation avoids relying on object category names during prompt construction and focuses the text-side representation on normal-abnormal semantics.
+
+\subsection{Object-Agnostic Prompt Adaptation}
+
+Although fixed object-agnostic prompts provide a simple way to construct normal and abnormal prototypes, they may not be optimal for dense anomaly segmentation. To adapt the text prototypes to the localization task, we introduce object-agnostic learnable prompt adaptation.
+
+We insert learnable context tokens into the object-agnostic normal and abnormal prompt forms:
+\begin{align}
+\hat{p}_n &=
+[v_n^1, v_n^2, \ldots, v_n^m, \mathrm{normal}, \mathrm{object}], \\
+\hat{p}_a &=
+[v_a^1, v_a^2, \ldots, v_a^m, \mathrm{defective}, \mathrm{object}],
+\label{eq:object_learnable_prompt}
+\end{align}
+where $v_n^i$ and $v_a^i$ are learnable context tokens for the normal and abnormal prompts, respectively, and $m$ is the number of learnable context tokens. The prompts do not contain object category names, making the text-side adaptation object-agnostic.
+
+The learned prompts are encoded by the frozen MobileCLIP2 text encoder:
+\begin{align}
+\hat{t}_n &= E_t(\hat{p}_n), \\
+\hat{t}_a &= E_t(\hat{p}_a).
+\label{eq:object_learned_proto}
+\end{align}
+These learned prototypes replace the fixed object-agnostic prototypes when computing dense anomaly maps. This allows the text side to adapt to the anomaly segmentation objective while keeping both the visual and text encoders frozen.
+
+\subsection{Object-Agnostic Prototype Anchoring}
+
+While object-agnostic prompt adaptation improves pixel-level segmentation, unconstrained prompt tuning can move the learned prototypes too far from the original MobileCLIP2 semantic space. This may improve dense localization on abnormal regions but degrade image-level anomaly detection by reducing the calibration between normal and abnormal image scores.
+
+To mitigate this issue, we introduce object-agnostic prototype anchoring. Let $t_n^{o}$ and $t_a^{o}$ be the fixed object-agnostic prototypes obtained from the frozen text encoder using ``normal object'' and ``defective object'', respectively. Let $\hat{t}_n$ and $\hat{t}_a$ be the learned prompt prototypes. The anchor loss is defined as
+\begin{equation}
+\mathcal{L}_{\mathrm{anchor}}
+=
+\left(1 - \cos(\hat{t}_n, t_n^{o})\right)
++
+\left(1 - \cos(\hat{t}_a, t_a^{o})\right).
+\label{eq:object_anchor}
+\end{equation}
+This loss encourages the learned prototypes to remain close to the original object-agnostic semantic anchors while still allowing task-specific adaptation. By constraining prototype drift, the anchor loss helps preserve image-level transfer while maintaining the localization benefit of prompt adaptation.
+
+\subsection{Training Objective}
+
+The LDA module and learnable prompt tokens are trained while the MobileCLIP2 image and text encoders remain frozen. The training objective combines pixel-level segmentation losses, image-level classification loss, stage consistency regularization, prompt regularization, and prototype anchor regularization.
+
+For pixel-level supervision, we use a combination of focal loss and Dice loss. The focal loss is computed over all training pixels, while the Dice loss is computed only for anomalous training images to avoid unstable optimization from empty normal masks:
+\begin{equation}
+\mathcal{L}_{\mathrm{pixel}}
+=
+\mathcal{L}_{\mathrm{focal}}
++
+\mathcal{L}_{\mathrm{dice}}.
+\label{eq:pixel_loss}
+\end{equation}
+
+To encourage image-level anomaly discrimination, we additionally apply an image-level classification loss. During training, the image-level logit is computed using the mean of the top-$k$ anomaly logits, where $k$ corresponds to a fixed fraction of the highest anomaly responses. This aggregation prevents sparse anomaly regions from being diluted by background pixels:
+\begin{equation}
+\mathcal{L}_{\mathrm{img}}
+=
+\mathcal{L}_{\mathrm{CE}}(y, \hat{y}),
+\label{eq:image_loss}
+\end{equation}
+where $y$ is the image-level label and $\hat{y}$ is the predicted image-level anomaly score.
+
+When multiple stages are used, we apply a stage consistency loss to encourage stable predictions across stage-specific anomaly maps. Specifically, stage-level anomaly logits are converted to sigmoid probability maps, downsampled to a low spatial resolution, and compared using mean squared error:
+\begin{equation}
+\mathcal{L}_{\mathrm{cons}}
+=
+\frac{1}{|\mathcal{P}|}
+\sum_{(s,r) \in \mathcal{P}}
+\left\|
+D(\sigma(\tilde{A}_s)) -
+D(\sigma(\tilde{A}_r))
+\right\|_2^2,
+\label{eq:cons_loss}
+\end{equation}
+where $\mathcal{P}$ denotes all pairs of selected stages, $\sigma(\cdot)$ is the sigmoid function, and $D(\cdot)$ denotes low-resolution downsampling.
+
+The final training objective is
+\begin{equation}
+\begin{aligned}
+\mathcal{L} =
+& \mathcal{L}_{\mathrm{pixel}}
++ \lambda_{\mathrm{img}}\mathcal{L}_{\mathrm{img}}
++ \lambda_{\mathrm{cons}}\mathcal{L}_{\mathrm{cons}} \\
+& + \lambda_{\mathrm{reg}}\mathcal{L}_{\mathrm{prompt}}
++ \lambda_{\mathrm{anchor}}\mathcal{L}_{\mathrm{anchor}} .
+\end{aligned}
+\label{eq:final_loss}
+\end{equation}
+where $\lambda_{\mathrm{img}}$, $\lambda_{\mathrm{cons}}$, $\lambda_{\mathrm{reg}}$, and $\lambda_{\mathrm{anchor}}$ control the relative weights of each loss term. The prompt regularization term $\mathcal{L}_{\mathrm{prompt}}$ is used to prevent excessive growth of the learnable context tokens.
+
+\subsection{Inference}
+
+During inference, the MobileCLIP2 backbone and text prototypes are fixed. Given a test image, MobileCLIP-AD extracts selected stage features, projects them into the text embedding space using the LDA module, and computes dense normal-abnormal similarity differences. The final anomaly map is obtained from the fused anomaly logit map.
+
+For image-level anomaly detection, the anomaly map can be aggregated using spatial statistics such as mean, maximum, or top-$k$ scores. In our main evaluation, we report image-level metrics using score-mean aggregation and pixel-level metrics using the full anomaly map.
+
+Because the MobileCLIP2 backbone remains frozen and the LDA module is lightweight, MobileCLIP-AD preserves the efficiency advantage of mobile-oriented vision-language models while enabling dense industrial anomaly segmentation.
+
+
+\section{Experiments}
+
+
+\subsection{Experimental Setting}
+
+We evaluate MobileCLIP-AD under a source-supervised cross-dataset anomaly segmentation setting. In this setting, the adaptation modules are trained using annotated samples from a source dataset, including normal images, anomalous images, and pixel-level masks, and are evaluated on an unseen target dataset. No target-domain samples are used during training. This setting differs from one-class anomaly detection protocols, where only defect-free training images are available during training.
+
+We evaluate cross-dataset transfer in two primary directions, VisA $\rightarrow$ MVTec AD and MVTec AD $\rightarrow$ VisA, and further include additional target datasets, including BTAD, MPDD, DAGM, and KSDD2, to examine generalization across different industrial inspection domains. When VisA is used as the target dataset, we evaluate on the official test split defined in \texttt{split\_csv/1cls.csv}. When VisA is used as the source dataset, we use annotated VisA source samples containing normal images, anomalous images, and pixel-level masks, because the proposed dense adaptation module requires pixel-level source-domain anomaly supervision. No target-domain samples are used for training in any transfer setting. The MobileCLIP2 backbone is kept frozen in all experiments, and only the LDA module and learnable prompt tokens are optimized. Unless otherwise specified, MobileCLIP2-S3 is used as the default backbone with stage-2 and stage-3 features.
+
+\subsection{Evaluation Metrics}
+
+We report both pixel-level and image-level anomaly detection metrics. Pixel-level performance is evaluated using pixel AUROC, pixel average precision (AP), AUPRO, pixel F1 score, and pixel IoU. Image-level performance is evaluated using image AUROC, image AP, and image F1 score obtained from anomaly map aggregation. For the main results, image-level metrics are computed using score-mean aggregation.
+
+
+\subsection{Stage Selection Analysis}
+
+We further investigate the effect of different hierarchical stage combinations used by LDA.
+MobileCLIP2-S3 consists of five hierarchical backbone stages.
+Among them, we evaluate stages 1--3, while excluding stages 0 and 4.
+Stage 0 mainly captures very low-level visual patterns with high spatial resolution, whereas stage 4 produces only a $4\times4$ feature map, providing insufficient spatial resolution for accurate dense anomaly localization.
+Therefore, we focus on stages 1--3, which provide a better balance between local texture information and semantic representation.
+
+Table~\ref{tab:stage_selection} summarizes the effect of different stage combinations.
+Using only stage 1 yields the weakest performance because early-stage features contain limited semantic information.
+Stage 2 and stage 3 individually achieve substantially better localization performance.
+Among all configurations, combining stages 2 and 3 provides the best overall trade-off between pixel-level and image-level performance and is therefore adopted as the default configuration throughout the paper.
+
+Interestingly, incorporating stage 1 further improves pixel AP, pixel F1, pixel IoU, and AUPRO.
+However, image-level AUROC, image AP, and image F1 decrease slightly, suggesting that early-stage features introduce additional local details while reducing global anomaly discrimination.
+
+\begin{table}[H]
+\centering
+\caption{Effect of different MobileCLIP2-S3 stage combinations used in LDA under the VisA $\rightarrow$ MVTec AD setting. Results are reported as mean $\pm$ standard deviation over three random seeds. Stage 2+3 is adopted as the default configuration because it provides the best trade-off between pixel-level and image-level performance.}
+\label{tab:stage_selection}
+
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccccccc}
+\toprule
+Stage &
+Pixel AUROC &
+Pixel AP &
+AUPRO &
+Pixel F1 &
+Pixel IoU &
+Image AUROC &
+Image AP &
+Image F1\\
+\midrule
+
+Stage 1
+&78.83$\pm$0.99
+&18.30$\pm$0.65
+&65.58$\pm$1.07
+&24.86$\pm$0.73
+&14.72$\pm$0.52
+&67.12$\pm$0.28
+&83.98$\pm$0.16
+&84.74$\pm$0.06\\
+
+Stage 2
+&89.69$\pm$0.21
+&33.72$\pm$0.46
+&81.99$\pm$0.57
+&37.69$\pm$0.37
+&24.24$\pm$0.33
+&84.04$\pm$0.66
+&92.31$\pm$0.40
+&89.70$\pm$0.46\\
+
+Stage 3
+&88.91$\pm$0.39
+&25.33$\pm$0.83
+&78.66$\pm$0.37
+&32.43$\pm$0.32
+&20.05$\pm$0.33
+&\textbf{88.23}$\pm$0.54
+&\textbf{94.19}$\pm$0.07
+&\textbf{91.24}$\pm$0.08\\
+
+Stage 1+2
+&88.66$\pm$0.11
+&32.07$\pm$0.28
+&81.69$\pm$0.10
+&37.10$\pm$0.24
+&23.98$\pm$0.22
+&80.62$\pm$0.69
+&90.35$\pm$0.43
+&88.58$\pm$0.15\\
+
+Stage 1+3
+&88.54$\pm$0.25
+&31.31$\pm$0.15
+&81.91$\pm$0.42
+&36.52$\pm$0.09
+&23.19$\pm$0.09
+&87.33$\pm$0.19
+&93.83$\pm$0.10
+&90.37$\pm$0.40\\
+
+Stage 2+3 (default)
+&\textbf{89.79}$\pm$0.32
+&33.51$\pm$0.54
+&82.88$\pm$0.26
+&38.41$\pm$0.33
+&24.67$\pm$0.21
+&87.26$\pm$1.01
+&93.99$\pm$0.37
+&90.97$\pm$0.44\\
+
+Stage 1+2+3
+&89.51$\pm$0.06
+&\textbf{35.22}$\pm$0.25
+&\textbf{83.79}$\pm$0.22
+&\textbf{39.55}$\pm$0.24
+&\textbf{25.71}$\pm$0.22
+&86.40$\pm$0.63
+&93.58$\pm$0.27
+&90.15$\pm$0.12\\
+
+\bottomrule
+\end{tabular}}
+\end{table}
+
+
+
+\subsection{Main Component Analysis}
+
+
+\begin{table}[H]
+\centering
+\caption{Main component analysis under the VisA $\rightarrow$ MVTec AD setting using MobileCLIP2-S3.
+Metrics are reported in percentage as mean $\pm$ standard deviation over three seeds.}
+\label{tab:main_results}
+\resizebox{\columnwidth}{!}{
+\begin{tabular}{lcccccccc}
+\toprule
+Setting & Pixel AUROC & Pixel AP & AUPRO & Pixel F1 & Pixel IoU & Image AUROC & Image AP & Image F1 \\
+\midrule
+Fixed prompt + LDA
+& 89.22$\pm$0.22 & 29.52$\pm$0.54 & 80.64$\pm$0.07 & 35.38$\pm$0.23 & 22.40$\pm$0.22
+& \textbf{89.11$\pm$0.27} & \textbf{94.76$\pm$0.17} & \textbf{91.32$\pm$0.22} \\
+Class-aware learnable prompt + LDA
+& 89.71$\pm$0.19 & 33.83$\pm$0.21 & 82.70$\pm$0.06 & 38.52$\pm$0.04 & 24.76$\pm$0.03
+& 86.04$\pm$0.78 & 93.37$\pm$0.28 & 90.61$\pm$0.13 \\
+Class-aware learnable prompt + class-aware anchor + LDA
+& \textbf{89.85$\pm$0.24} & 33.23$\pm$0.54 & 82.87$\pm$0.19 & 38.23$\pm$0.40 & 24.49$\pm$0.29
+& 87.22$\pm$0.50 & 94.02$\pm$0.19 & 90.89$\pm$0.28 \\
+Object-agnostic prompt + LDA
+& 89.76$\pm$0.19 & \textbf{33.87$\pm$0.28} & 82.62$\pm$0.06 & \textbf{38.58$\pm$0.10} & \textbf{24.83$\pm$0.10}
+& 85.67$\pm$0.97 & 93.09$\pm$0.40 & 90.48$\pm$0.32 \\
+Object-agnostic prompt + object-agnostic anchor + LDA
+& 89.79$\pm$0.26 & 33.51$\pm$0.44 & \textbf{82.88$\pm$0.21} & 38.41$\pm$0.27 & 24.67$\pm$0.17
+& 87.26$\pm$0.83 & 93.99$\pm$0.30 & 90.97$\pm$0.36 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Table~\ref{tab:main_results} summarizes the main component analysis under the VisA $\rightarrow$ MVTec AD setting. The fixed-prompt LDA baseline already achieves strong image-level detection performance, while learnable prompt adaptation substantially improves pixel-level localization, increasing Pixel AP from 29.52 to 33.83 and Pixel IoU from 22.40 to 24.76. The object-agnostic prompt achieves localization performance comparable to the class-aware prompt while removing explicit category-name dependence. Adding an object-agnostic prototype anchor recovers image-level calibration compared with the unanchored object-agnostic prompt, improving Image AUROC from 85.67 to 87.26 and Image AP from 93.09 to 93.99. These results support the final LDA-based MobileCLIP-AD design, which provides a favorable trade-off between localization performance and image-level calibration.
+
+\begin{table*}[htbp]
+\centering
+\caption{Cross-dataset anomaly segmentation results using the proposed LDA-based adaptation framework. Metrics are reported in percentage as mean $\pm$ standard deviation over three seeds. All methods use the same object-agnostic prompt and anchor setting.}
+\label{tab:cross_dataset_results}
+\renewcommand{\arraystretch}{1.05}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{llrrrrrrrr}
+\toprule
+Backbone & Task & Pixel AUROC & Pixel AP & AUPRO & Pixel F1 & Pixel IoU & Image AUROC & Image AP & Image F1 \\
+\midrule
+MobileCLIP2-S3 & VisA$\rightarrow$MVTec & 89.79$\pm$0.32 & 33.51$\pm$0.54 & 82.88$\pm$0.26 & 38.41$\pm$0.34 & 24.67$\pm$0.21 & 87.26$\pm$1.02 & 93.99$\pm$0.37 & 90.97$\pm$0.44 \\
+CLIP ViT-L/14@224 & VisA$\rightarrow$MVTec & 90.58$\pm$0.02 & 35.35$\pm$0.50 & 85.04$\pm$0.19 & 39.39$\pm$0.40 & 25.34$\pm$0.34 & 81.63$\pm$0.72 & 90.88$\pm$0.32 & 87.71$\pm$0.33 \\
+CLIP ViT-L/14@336 & VisA$\rightarrow$MVTec & 90.69$\pm$0.10 & 40.43$\pm$0.65 & 87.28$\pm$0.21 & 43.38$\pm$0.40 & 28.66$\pm$0.38 & 86.44$\pm$1.27 & 93.61$\pm$0.54 & 89.98$\pm$0.56 \\
+\midrule
+MobileCLIP2-S3 & MVTec$\rightarrow$VisA & 93.29$\pm$0.17 & 13.82$\pm$0.29 & 76.40$\pm$0.23 & 20.58$\pm$0.45 & 12.09$\pm$0.27 & 76.85$\pm$1.99 & 80.39$\pm$1.77 & 79.07$\pm$0.62 \\
+CLIP ViT-L/14@224 & MVTec$\rightarrow$VisA & 93.84$\pm$0.34 & 18.25$\pm$0.55 & 81.42$\pm$1.36 & 25.33$\pm$0.51 & 15.45$\pm$0.35 & 69.90$\pm$0.74 & 75.30$\pm$0.62 & 74.95$\pm$0.39 \\
+CLIP ViT-L/14@336 & MVTec$\rightarrow$VisA & 94.70$\pm$0.10 & 21.92$\pm$0.72 & 86.22$\pm$0.24 & 29.05$\pm$0.90 & 18.01$\pm$0.67 & 74.30$\pm$1.49 & 79.14$\pm$1.22 & 76.59$\pm$0.37 \\
+\midrule
+MobileCLIP2-S3 & VisA$\rightarrow$BTAD & 93.83$\pm$0.59 & 36.68$\pm$1.77 & 74.06$\pm$0.95 & 41.96$\pm$1.34 & 27.11$\pm$1.02 & 93.54$\pm$0.65 & 94.60$\pm$0.54 & 89.68$\pm$0.29 \\
+CLIP ViT-L/14@224 & VisA$\rightarrow$BTAD & 95.46$\pm$0.14 & 46.23$\pm$0.57 & 74.97$\pm$0.69 & 51.77$\pm$0.50 & 35.26$\pm$0.43 & 90.02$\pm$0.41 & 93.68$\pm$0.48 & 88.66$\pm$0.24 \\
+CLIP ViT-L/14@336 & VisA$\rightarrow$BTAD & 95.29$\pm$0.04 & 49.95$\pm$0.05 & 78.78$\pm$1.12 & 54.31$\pm$0.43 & 37.39$\pm$0.41 & 90.48$\pm$0.78 & 95.54$\pm$0.61 & 92.44$\pm$0.66 \\
+\midrule
+MobileCLIP2-S3 & VisA$\rightarrow$MPDD & 93.53$\pm$0.16 & 20.21$\pm$0.27 & 81.97$\pm$0.81 & 24.31$\pm$0.43 & 15.42$\pm$0.28 & 77.34$\pm$1.07 & 82.71$\pm$0.54 & 80.82$\pm$1.10 \\
+CLIP ViT-L/14@224 & VisA$\rightarrow$MPDD & 95.57$\pm$0.29 & 23.92$\pm$0.69 & 86.06$\pm$0.90 & 27.13$\pm$0.70 & 18.04$\pm$0.58 & 66.47$\pm$2.48 & 71.81$\pm$2.38 & 76.42$\pm$0.11 \\
+CLIP ViT-L/14@336 & VisA$\rightarrow$MPDD & 96.58$\pm$0.05 & 26.07$\pm$0.57 & 89.71$\pm$0.52 & 29.65$\pm$0.32 & 19.71$\pm$0.16 & 70.04$\pm$2.33 & 75.15$\pm$2.12 & 77.33$\pm$0.44 \\
+\midrule
+MobileCLIP2-S3 & VisA$\rightarrow$DAGM & 97.17$\pm$0.02 & 36.21$\pm$0.77 & 92.65$\pm$0.11 & 41.16$\pm$0.86 & 26.93$\pm$0.68 & 86.49$\pm$1.16 & 63.42$\pm$1.35 & 64.18$\pm$1.70 \\
+CLIP ViT-L/14@224 & VisA$\rightarrow$DAGM & 94.89$\pm$0.30 & 30.54$\pm$2.53 & 88.09$\pm$0.58 & 37.23$\pm$2.31 & 23.54$\pm$1.79 & 73.73$\pm$2.63 & 45.19$\pm$4.07 & 48.04$\pm$3.46 \\
+CLIP ViT-L/14@336 & VisA$\rightarrow$DAGM & 95.42$\pm$0.19 & 37.77$\pm$2.89 & 91.76$\pm$0.37 & 43.09$\pm$1.85 & 28.01$\pm$1.55 & 79.96$\pm$3.12 & 51.14$\pm$3.80 & 53.59$\pm$3.33 \\
+\midrule
+MobileCLIP2-S3 & VisA$\rightarrow$KSDD2 & 98.34$\pm$0.18 & 41.48$\pm$1.42 & 96.80$\pm$0.18 & 46.07$\pm$1.08 & 29.93$\pm$0.91 & 96.52$\pm$0.44 & 87.22$\pm$1.95 & 81.83$\pm$0.95 \\
+CLIP ViT-L/14@224 & VisA$\rightarrow$KSDD2 & 97.06$\pm$0.38 & 44.07$\pm$1.28 & 95.79$\pm$0.32 & 47.98$\pm$1.03 & 31.56$\pm$0.89 & 92.28$\pm$0.73 & 74.45$\pm$2.82 & 71.11$\pm$2.39 \\
+CLIP ViT-L/14@336 & VisA$\rightarrow$KSDD2 & 94.95$\pm$0.43 & 51.54$\pm$1.40 & 95.53$\pm$0.50 & 55.60$\pm$1.05 & 38.51$\pm$1.01 & 94.69$\pm$0.72 & 82.47$\pm$1.78 & 77.10$\pm$1.66 \\
+\bottomrule
+\end{tabular}
+}
+\end{table*}
+
+The CLIP ViT-L/14 references generally improve fine-grained localization metrics, especially Pixel AP, F1, and IoU, indicating that large ViT-based CLIP backbones still provide stronger and better-calibrated dense feature representations. This remains a clear limitation of MobileCLIP2-S3, particularly when sharp anomaly confidence maps are required. However, MobileCLIP2-S3 maintains competitive Pixel AUROC across most transfer settings and achieves comparable or better image-level anomaly detection performance in several cases. These results suggest that lightweight dense adaptation enables MobileCLIP2 hierarchical features to provide a practical accuracy--efficiency trade-off for cross-dataset anomaly localization rather than a strict replacement for larger ViT-L/14 backbones.
+
+
+\subsection{Necessity of Dense Adaptation}
+
+Table~\ref{tab:lda_necessity} analyzes why dense adaptation is necessary for MobileCLIP2-S3 hierarchical features under the VisA $\rightarrow$ MVTec AD setting. Raw stage-3 text similarity performs poorly even when the best direct scoring direction is selected, indicating that MobileCLIP2 hierarchical features are not directly suitable for dense text matching. Adding a dense projection head provides the largest performance improvement, confirming that projection-based dense adaptation is the essential component. Local refinement yields comparable aggregate metrics to projection-only adaptation rather than a large standalone quantitative gain. Prompt adaptation and prototype anchoring further improve pixel-level AP, F1, IoU, and AUPRO, while introducing a moderate trade-off in image-level AUROC.
+
+\begin{table}[H]
+\centering
+\caption{Necessity of dense adaptation for MobileCLIP2-S3 hierarchical features under the VisA $\rightarrow$ MVTec AD setting. Raw stage-3 text similarity reports the best direct score among $s_a$, $1-s_n$, $s_a-s_n$, and $s_n-s_a$, where $s_n$ and $s_a$ denote cosine similarities to the normal-object and defective-object prototypes. Results except the raw baseline are reported as mean $\pm$ standard deviation over three seeds.}
+\label{tab:lda_necessity}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lcccccccc}
+\toprule
+Method & Px AUROC & Px AP & AUPRO & Px F1 & Px IoU & Img AUROC & Img AP & Img F1 \\
+\midrule
+Raw stage-3 text similarity, best direct score
+& 65.58
+& 6.80
+& 24.36
+& 11.66
+& 6.45
+& 63.13
+& 81.78
+& 84.37 \\
+Projection only + fixed prompts
+& 89.57$\pm$0.02
+& 29.92$\pm$0.18
+& 80.76$\pm$0.47
+& 35.23$\pm$0.04
+& 22.22$\pm$0.05
+& 89.10$\pm$0.90
+& 94.75$\pm$0.36
+& 91.45$\pm$0.37 \\
+Projection + local refinement + fixed prompts
+& 89.22$\pm$0.27
+& 29.52$\pm$0.66
+& 80.64$\pm$0.08
+& 35.38$\pm$0.28
+& 22.40$\pm$0.27
+& 89.11$\pm$0.32
+& 94.76$\pm$0.21
+& 91.32$\pm$0.27 \\
+Projection + prompt + anchor
+& 90.03$\pm$0.21
+& 33.12$\pm$0.75
+& 82.74$\pm$0.28
+& 37.84$\pm$0.75
+& 24.21$\pm$0.59
+& 87.62$\pm$0.92
+& 94.16$\pm$0.38
+& 90.97$\pm$0.02 \\
+Full MobileCLIP-AD
+& 89.79$\pm$0.32
+& 33.51$\pm$0.54
+& 82.88$\pm$0.26
+& 38.41$\pm$0.34
+& 24.67$\pm$0.21
+& 87.26$\pm$1.02
+& 93.99$\pm$0.37
+& 90.97$\pm$0.44 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+
+
+
+
+
+% Qualitative comparison figure removed because local-refinement behavior is dataset-dependent.
+
+
+
+
+
+
+\subsection{Efficiency Analysis}
+
+To complement the accuracy evaluation, Table~\ref{tab:backbone_efficiency} reports the computational efficiency of the same backbones used in Table~\ref{tab:main_results}. Parameters are divided into total, image encoder, text encoder, and trainable adaptation parameters. Image encoder FLOPs are reported because text prototypes are computed once and reused during inference.
+
+\begin{table}[H]
+\centering
+\caption{Backbone efficiency comparison under the proposed LDA framework.
+Image encoder FLOPs are reported in GFLOPs.
+Trainable parameters include the LDA head and object-agnostic learnable prompt tokens.}
+\label{tab:backbone_efficiency}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lccccccc}
+\toprule
+Backbone & Total Params & Image Params & Text Params & LDA Head & Prompt & Trainable & Image FLOPs (G) \\
+\midrule
+MobileCLIP2-S3@256 & 248.89M & 125.24M & 123.65M & 3.26M & 0.01M & 3.27M & 29.68 \\
+CLIP ViT-L/14@224 & 427.62M & 303.97M & 123.65M & 3.95M & 0.01M & 3.96M & 116.73 \\
+CLIP ViT-L/14@336 & 427.94M & 304.29M & 123.65M & 3.95M & 0.01M & 3.96M & 262.07 \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Taken together, Tables~\ref{tab:cross_dataset_results} and~\ref{tab:backbone_efficiency} demonstrate the accuracy-efficiency trade-off between large CLIP and MobileCLIP backbones. Compared with CLIP ViT-L/14@224, MobileCLIP2-S3 reduces image-encoder parameters by 2.43$\times$ and image-encoder FLOPs by 3.93$\times$ while maintaining a relatively small Pixel AUROC gap across the evaluated cross-dataset settings. Compared with CLIP ViT-L/14@336, MobileCLIP2-S3 provides an 8.83$\times$ reduction in image-encoder FLOPs. Although ViT-L/14 generally achieves stronger Pixel AP, F1, and IoU due to its higher-capacity dense representations, the DAGM results show that MobileCLIP2-S3 can outperform both ViT-L/14 variants in Pixel AUROC, AUPRO, and image-level metrics on texture-oriented industrial defects. MobileCLIP2-S3 therefore provides a practical lower-FLOP alternative to ViT-L/14-based references when image-encoder computation is an important constraint.
+
+\subsection{Prompt Length Sensitivity}
+
+MobileCLIP-AD inserts learnable context tokens into the normal and abnormal prompts. We set $n_{\mathrm{ctx}}=4$ as a compact default prompt length. Table~\ref{tab:nctx_ablation} analyzes the sensitivity to the number of learnable context tokens under the VisA $\rightarrow$ MVTec AD setting. The results show that performance is relatively insensitive to $n_{\mathrm{ctx}}$ in the range of 2 to 10. Longer prompts slightly improve some pixel-level metrics, but they do not consistently improve image-level detection. We therefore use $n_{\mathrm{ctx}}=4$ as the default because it provides a compact prompt while maintaining strong localization and the best image-level metrics among the evaluated settings.
+
+\begin{table}[htbp]
+\centering
+\caption{Sensitivity analysis on the number of learnable context tokens under the VisA $\rightarrow$ MVTec AD setting. Metrics are reported in percentage as mean $\pm$ standard deviation over three seeds. Image-level metrics are computed using score-mean aggregation.}
+\label{tab:nctx_ablation}
+\renewcommand{\arraystretch}{1.08}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lrrrrrrrr}
+\toprule
+$n_{\mathrm{ctx}}$ & Pixel AUROC & Pixel AP & AUPRO & Pixel F1 & Pixel IoU & Image AUROC & Image AP & Image F1 \\
+\midrule
+2  & 89.82 $\pm$ 0.36 & 33.21 $\pm$ 0.16 & 82.76 $\pm$ 0.26 & 38.24 $\pm$ 0.02 & 24.53 $\pm$ 0.09 & 87.07 $\pm$ 0.27 & 93.86 $\pm$ 0.25 & 90.85 $\pm$ 0.20 \\
+4  & 89.79 $\pm$ 0.32 & 33.51 $\pm$ 0.54 & 82.88 $\pm$ 0.26 & 38.41 $\pm$ 0.34 & 24.67 $\pm$ 0.21 & \textbf{87.26 $\pm$ 1.02} & \textbf{93.99 $\pm$ 0.37} & \textbf{90.97 $\pm$ 0.44} \\
+6  & 89.78 $\pm$ 0.36 & 33.43 $\pm$ 0.42 & 82.86 $\pm$ 0.12 & 38.32 $\pm$ 0.10 & 24.61 $\pm$ 0.10 & 87.04 $\pm$ 0.20 & 93.88 $\pm$ 0.10 & 90.93 $\pm$ 0.08 \\
+8  & 89.98 $\pm$ 0.38 & 33.78 $\pm$ 0.58 & 82.85 $\pm$ 0.20 & \textbf{38.72 $\pm$ 0.60} & \textbf{24.93 $\pm$ 0.48} & 86.26 $\pm$ 0.49 & 93.48 $\pm$ 0.17 & 90.73 $\pm$ 0.09 \\
+10 & \textbf{90.02 $\pm$ 0.22} & \textbf{33.76 $\pm$ 0.85} & 82.83 $\pm$ 0.30 & 38.53 $\pm$ 0.51 & 24.79 $\pm$ 0.42 & 86.82 $\pm$ 0.25 & 93.71 $\pm$ 0.11 & 90.77 $\pm$ 0.25 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+
+
+
+\subsection{Effect of Object-Agnostic Anchor Weight}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.58\textwidth]{../paper_results/figures/anchor_semantic_consistency.pdf}
+\caption{Effect of object-agnostic prototype anchoring on learned text prototypes. The cosine similarity is measured between learned prompts and their corresponding fixed object-agnostic anchors. Increasing $\lambda_{\mathrm{anchor}}$ keeps the learned prompts closer to the pretrained object-agnostic semantic anchors, indicating that prototype anchoring preserves the pretrained text-semantic structure and mitigates prompt drift.}
+\label{fig:anchor_semantic_consistency}
+\end{figure}
+
+
+
+We further analyze the effect of the object-agnostic prototype anchoring weight $\lambda_{\mathrm{anchor}}$. Figure~\ref{fig:anchor_semantic_consistency} shows that increasing $\lambda_{\mathrm{anchor}}$ keeps the learned normal and abnormal prompts closer to their corresponding fixed object-agnostic anchors. This indicates that prototype anchoring primarily acts as a semantic regularizer by reducing excessive prompt drift, rather than directly enforcing larger distances between normal and abnormal text prototypes. Table~\ref{tab:anchor_ablation} reports the sensitivity analysis under the VisA $\rightarrow$ MVTec AD setting. Without prototype anchoring ($\lambda_{\mathrm{anchor}}=0$), the model achieves the strongest Pixel AP, F1, and IoU, but image-level detection is substantially degraded. Increasing $\lambda_{\mathrm{anchor}}$ progressively improves image-level calibration, with Image AUROC increasing from 85.67 to 87.39 and Image AP increasing from 93.09 to 94.07. However, stronger anchoring slightly reduces pixel-level sharpness. Based on this localization-calibration trade-off, we use $\lambda_{\mathrm{anchor}}=0.5$ as the default setting.
+
+\begin{table}[htbp]
+\centering
+\caption{Sensitivity analysis on the object-agnostic prototype anchor weight $\lambda_{\mathrm{anchor}}$ under the VisA $\rightarrow$ MVTec AD setting. Metrics are reported in percentage as mean $\pm$ standard deviation over three seeds. Image-level metrics are computed using score-mean aggregation.}
+\label{tab:anchor_ablation}
+\renewcommand{\arraystretch}{1.08}
+\scriptsize
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lrrrrrrrr}
+\toprule
+$\lambda_{\mathrm{anchor}}$ & Pixel AUROC & Pixel AP & AUPRO & Pixel F1 & Pixel IoU & Image AUROC & Image AP & Image F1 \\
+\midrule
+0.00 & 89.76 $\pm$ 0.24 & \textbf{33.87 $\pm$ 0.35} & 82.62 $\pm$ 0.07 & \textbf{38.58 $\pm$ 0.12} & \textbf{24.83 $\pm$ 0.12} & 85.67 $\pm$ 1.20 & 93.09 $\pm$ 0.49 & 90.48 $\pm$ 0.40 \\
+0.25 & 89.76 $\pm$ 0.33 & 33.70 $\pm$ 0.38 & 82.87 $\pm$ 0.21 & 38.54 $\pm$ 0.18 & 24.77 $\pm$ 0.09 & 87.01 $\pm$ 1.10 & 93.87 $\pm$ 0.44 & \textbf{90.99 $\pm$ 0.45} \\
+0.50 & 89.79 $\pm$ 0.32 & 33.51 $\pm$ 0.54 & \textbf{82.88 $\pm$ 0.26} & 38.41 $\pm$ 0.34 & 24.67 $\pm$ 0.21 & 87.26 $\pm$ 1.02 & 93.99 $\pm$ 0.37 & 90.97 $\pm$ 0.44 \\
+0.75 & 89.78 $\pm$ 0.31 & 33.36 $\pm$ 0.60 & 82.85 $\pm$ 0.30 & 38.31 $\pm$ 0.39 & 24.59 $\pm$ 0.26 & 87.33 $\pm$ 0.94 & 94.04 $\pm$ 0.35 & 90.93 $\pm$ 0.40 \\
+1.00 & \textbf{89.80 $\pm$ 0.30} & 33.27 $\pm$ 0.63 & 82.84 $\pm$ 0.30 & 38.24 $\pm$ 0.43 & 24.54 $\pm$ 0.28 & \textbf{87.39 $\pm$ 0.89} & \textbf{94.07 $\pm$ 0.32} & 90.92 $\pm$ 0.35 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+
+\subsection{MobileCLIP2 Variant Analysis}
+
+Table~\ref{tab:variant_efficiency} analyzes the effect of MobileCLIP2 backbone scale under the final MobileCLIP-AD setting. S0 and S2 are computationally efficient but fail to provide reliable dense anomaly localization. In contrast, S3 achieves a large and stable performance jump, suggesting that sufficient visual capacity is necessary for cross-dataset dense adaptation. S4 slightly improves several pixel-level metrics, but the gain over S3 is marginal compared with its substantially larger backbone and FLOPs. We therefore select MobileCLIP2-S3 as the default backbone for its favorable accuracy-efficiency trade-off.
+
+
+
+\begin{table}[htbp]
+\centering
+\caption{MobileCLIP2 backbone variant analysis under the final LDA-based MobileCLIP-AD setting. (a) Performance metrics are reported as mean $\pm$ standard deviation over three seeds using score-mean aggregation for image-level metrics. (b) Efficiency values are measured at $256\times256$ input resolution. Image encoder FLOPs are reported in GFLOPs.}
+\label{tab:variant_efficiency}
+\renewcommand{\arraystretch}{1.10}
+\scriptsize
+\textbf{(a) Performance comparison}\\[0.35em]
+\resizebox{\textwidth}{!}{
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Backbone & Pixel AUROC & Pixel AP & AUPRO & Pixel F1 & Pixel IoU & Image AUROC & Image AP & Image F1 \\
+\midrule
+MobileCLIP2-S0 & 72.12 $\pm$ 0.99 & 7.20 $\pm$ 0.38 & 30.79 $\pm$ 0.95 & 12.61 $\pm$ 0.42 & 6.98 $\pm$ 0.26 & 48.01 $\pm$ 1.08 & 73.72 $\pm$ 0.68 & 83.64 $\pm$ 0.11 \\
+MobileCLIP2-S2 & 70.35 $\pm$ 2.09 & 6.13 $\pm$ 0.16 & 29.61 $\pm$ 1.68 & 11.29 $\pm$ 0.29 & 6.16 $\pm$ 0.18 & 49.16 $\pm$ 0.17 & 73.26 $\pm$ 0.25 & 83.78 $\pm$ 0.04 \\
+MobileCLIP2-S3 & 89.79 $\pm$ 0.32 & 33.51 $\pm$ 0.54 & 82.88 $\pm$ 0.26 & 38.41 $\pm$ 0.34 & 24.67 $\pm$ 0.21 & 87.26 $\pm$ 1.02 & 93.99 $\pm$ 0.37 & 90.97 $\pm$ 0.44 \\
+MobileCLIP2-S4 & \textbf{90.20 $\pm$ 0.01} & \textbf{34.49 $\pm$ 0.96} & \textbf{83.74 $\pm$ 0.39} & \textbf{38.66 $\pm$ 0.66} & \textbf{24.80 $\pm$ 0.57} & \textbf{88.10 $\pm$ 0.57} & \textbf{94.70 $\pm$ 0.21} & \textbf{92.50 $\pm$ 0.13} \\
+\bottomrule
+\end{tabular}
+}
+\vspace{0.8em}
+
+\textbf{(b) Backbone and adaptation efficiency}\\[0.35em]
+\resizebox{0.95\textwidth}{!}{
+\begin{tabular}{lrrrrr}
+\toprule
+Backbone & Total Params & Image Params & Text Params & Trainable & Image FLOPs (G) \\
+\midrule
+MobileCLIP2-S0 & 74.84M & 11.41M & 63.43M & 1.46M & 4.80 \\
+MobileCLIP2-S2 & 99.24M & 35.82M & 63.43M & 1.56M & 15.74 \\
+MobileCLIP2-S3 & 248.89M & 125.24M & 123.65M & 3.27M & 29.68 \\
+MobileCLIP2-S4 & 445.44M & 321.78M & 123.65M & 3.57M & 55.59 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+
+
+The efficiency results in Table~\ref{tab:variant_efficiency} show that S4 provides only marginal gains over S3 while requiring 1.79$\times$ more total parameters, 2.57$\times$ more image-encoder parameters, and 1.87$\times$ more image-encoder GFLOPs. We therefore use MobileCLIP2-S3 as the default backbone. We do not claim that MobileCLIP2-S3 is lighter than all compact CLIP backbones such as ViT-B/16 or ViT-B/32. Rather, our efficiency discussion focuses on the trade-off against larger ViT-L/14-based CLIP anomaly segmentation methods.
+
+\subsection{Contextual Comparison with CLIP-Based Methods}
+
+MobileCLIP-AD is not intended as a strict SOTA accuracy model. Reported CLIP-based methods such as AnomalyCLIP, AdaCLIP, AA-CLIP, Bayes-PFL, and MoECLIP generally use ViT-L/14-based CLIP backbones and obtain higher AP than MobileCLIP-AD. However, these reported results are affected by differences in dataset metadata, VisA split handling, input resolution, score aggregation, and re-training protocols. Therefore, we use them only for contextual positioning. Under our controlled protocol, MobileCLIP-AD reaches competitive pixel-level AUROC while using a MobileCLIP2-S3 backbone with substantially lower image-encoder GFLOPs than ViT-L/14-based backbones. The lower Pixel AP indicates that improving confidence calibration and false-positive suppression remains a key limitation.
+
+
+\subsection{Discussion}
+
+Our results should be interpreted in the context of adapting image-level vision-language models for dense anomaly localization. Standard CLIP-style pretraining does not explicitly optimize pixel-level anomaly segmentation, and existing CLIP-based anomaly segmentation methods typically introduce additional localization mechanisms such as window-level embedding extraction, prompt learning, feature adaptation, or adapter modules. In this work, we focus on whether a mobile-oriented hierarchical vision-language backbone can be adapted under the same dense anomaly segmentation framework used for larger CLIP references.
+
+The proposed LDA module enables hierarchical MobileCLIP2 features to be compared with text prototypes in a dense manner. The cross-dataset results indicate that this lightweight dense adaptation generalizes reasonably well across multiple unseen industrial datasets, including MVTec AD, VisA, BTAD, MPDD, and DAGM. In particular, the strong Pixel AUROC on BTAD, MPDD, and DAGM suggests that MobileCLIP2 features can provide competitive dense anomaly localization performance when properly adapted. The DAGM results further indicate that MCi-based MobileCLIP2 features can be especially effective for texture-dominant anomaly localization. Nevertheless, Pixel AP remains relatively low on some targets, especially VisA and MPDD. This suggests that the current model often ranks anomalous regions reasonably well but does not always produce sharply localized and well-calibrated anomaly confidence maps. Improving confidence calibration and false-positive suppression is therefore an important direction for future work.
+
+The variant and efficiency analyses further show that the efficiency-performance trade-off is not simply determined by model size. MobileCLIP2-S0 and S2 are lightweight but insufficient for stable dense anomaly localization. MobileCLIP2-S4 provides slightly better pixel-level metrics than S3, but requires substantially larger image-encoder parameters and FLOPs. Therefore, MobileCLIP2-S3 is selected as the default backbone because it is the smallest evaluated variant that achieves stable dense anomaly segmentation with a favorable accuracy-efficiency trade-off.
+
+
+\section{Conclusion}
+
+In this paper, we presented MobileCLIP-AD, an object-agnostic mobile vision-language framework for source-supervised cross-dataset industrial anomaly segmentation. We investigated whether frozen MobileCLIP2 hierarchical features can be adapted for dense industrial anomaly segmentation under a source-supervised cross-dataset setting. To this end, we introduced LDA, which adapts hierarchical MobileCLIP2 stage features to the shared text embedding space through lightweight projection, local spatial refinement, and stage fusion.
+
+Instead of relying on CLIP-style window-level localization interfaces, MobileCLIP-AD provides a lightweight dense adaptation strategy tailored to MobileCLIP2 hierarchical representations.
+
+We further introduced object-agnostic prompt adaptation and object-agnostic prototype anchoring using generic ``normal object'' and ``defective object'' prototypes. This design avoids relying on object category names during prompt construction while maintaining performance comparable to class-aware prompting. Experiments under VisA $\rightarrow$ MVTec AD and MVTec AD $\rightarrow$ VisA transfer settings demonstrate that frozen MobileCLIP2 hierarchical features can be effectively adapted for dense anomaly segmentation. Backbone analysis further shows that MobileCLIP2-S3 provides a favorable accuracy-efficiency trade-off compared with larger MobileCLIP2 variants and ViT-L/14-based backbones.
+
+MobileCLIP-AD is not intended as a pure state-of-the-art accuracy model. Instead, it provides an empirical study of how mobile-oriented vision-language features can be adapted for dense industrial anomaly segmentation. The relatively low Pixel AP on VisA indicates that anomaly confidence calibration and false-positive suppression remain open challenges. Future work will investigate sharper anomaly map calibration, normal-only adaptation objectives, and deployment-oriented optimization for real-time industrial inspection systems.
+
+% -------------------------------------------------
+% References
+% -------------------------------------------------
+
+\begin{thebibliography}{9}
+
+\bibitem{winclip}
+Jongheon Jeong, Yang Zou, Taewan Kim, Dongqing Zhang, Avinash Ravichandran, and Onkar Dabeer.
+\newblock WinCLIP: Zero-/Few-Shot Anomaly Classification and Segmentation.
+\newblock In \emph{Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2023.
+
+\end{thebibliography}
+
+
+\end{document}
